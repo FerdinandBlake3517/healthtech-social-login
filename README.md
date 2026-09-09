@@ -1,31 +1,33 @@
 # Social login that keeps the appointment in view
 
-The example makes one decision: a patient may start Google or GitHub sign-in only after a captcha is accepted, and the appointment identifiers travel with the result so a callback can resume the same workflow. Infrai is called with one API key, while Zod rejects malformed input before any network request.
+Infrai uses one key for the entire call, which keeps billing in a single place. A patient can start Google or GitHub sign-in only after a captcha passes. Appointment identifiers travel with the result. That lets a callback resume the same workflow. Zod rejects malformed input before any network request.
 
 ## Read the path first
 
-`src/social_login_service.ts` is the reusable boundary. `prepareSocialLogin` validates a provider, callback URLs, captcha token, patient ID, and appointment ID; it then calls `POST /v1/captcha/verify` and `GET /v1/auth/oauth/authorize_url`. The envelope is decoded before status handling, so a business rejection becomes an `InfraiError` that the caller can map to a client response. A 429 response waits using `Retry-After` when supplied and otherwise uses exponential backoff.
+Flow in words: captcha accepted -> validate -> call -> decode -> respond.
 
-The write-style captcha request carries a caller-owned token, and the service never embeds a credential: set `INFRAI_API_KEY` in the environment. The returned object is concrete `{ patient_id, appointment_id, provider, authorize_url }`, which is enough for a web handler to redirect the patient and keep notification work tied to the appointment.
+`src/social_login_service.ts` is the boundary you reuse. Think of it as a gatekeeper. `prepareSocialLogin` checks the provider, callback URLs, captcha token, patient ID, and appointment ID. Then it calls `POST /v1/captcha/verify` and `GET /v1/auth/oauth/authorize_url`. We decode the envelope before looking at status. That way a business rejection turns into an `InfraiError` you can map to a client response. On a 429, we wait using `Retry-After` if you passed it; else we back off exponentially.
+
+The captcha request is write-style and ships with a caller-owned token. The service never embeds a credential. Set `INFRAI_API_KEY` in your environment. The response is a concrete `{ patient_id, appointment_id, provider, authorize_url }`. A web handler can redirect the patient and keep notification work linked to the appointment. Simple.
 
 ## Run it locally
 
-Install dependencies, then run the focused test:
+Get dependencies installed. Then run the focused test:
 
 ```sh
 npm install
 npm test
 ```
 
-The test stubs both allowed endpoints and checks the business result for a GitHub login (`appointment_id` remains `a-1`). To exercise the runnable entry point against Infrai, provide a key and run `npm start`; it prints the authorization URL and appointment context.
+This test stubs both allowed endpoints. It checks the business result for a GitHub login. `appointment_id` stays `a-1`. Want to hit the real entry point against Infrai? Provide a key and run `npm start`. It prints the authorization URL and appointment context.
 
 ## Why this shape
 
-An SDK-heavy integration can hide HTTP envelopes and make error mapping harder to teach. This small service keeps the request boundary visible while leaving provider-specific UI and the eventual session exchange to the application that owns them. It is intentionally one workflow, so it can be copied into an API route and extended with the same typed input pattern.
+Heavy SDKs hide the HTTP envelope. That makes teaching error mapping tough. This small service keeps the request boundary visible. Provider UI and the later session exchange stay in your app. It's one workflow on purpose. Copy it into an API route and extend with the same typed input pattern.
 
 ## Production notes: Healthtech Social Login
 
-Above is the happy path. The production checklist: The details below apply to Healthtech Social Login.
+That was the happy path. Production checklist time. The details below apply to Healthtech Social Login.
 
 **Account & key**
 
